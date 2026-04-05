@@ -10,9 +10,9 @@ const LocaleLayout = async ({
 }) => {
   const locale = await getLocaleOnServer()
   return (
-    <html lang={locale ?? 'en'} className="h-full">
-      <body className="h-full">
-        <div className="overflow-x-auto">
+    <html lang={locale ?? 'en'} className="h-full" suppressHydrationWarning>
+      <body className="h-full" suppressHydrationWarning>
+        <div className="overflow-x-auto" suppressHydrationWarning>
           <div className="w-screen h-screen min-w-[300px]">
             {children}
           </div>
