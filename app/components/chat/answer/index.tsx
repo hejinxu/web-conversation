@@ -19,7 +19,7 @@ import Thought from '../thought'
 function OperationBtn({ innerContent, onClick, className }: { innerContent: React.ReactNode, onClick?: () => void, className?: string }) {
   return (
     <div
-      className={`relative box-border flex items-center justify-center h-7 w-7 p-0.5 rounded-lg bg-white dark:bg-gray-700 cursor-pointer text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 ${className ?? ''}`}
+      className={`relative box-border flex items-center justify-center h-7 w-7 p-0.5 rounded-lg bg-white dark:bg-gray-700 cursor-pointer text-gray-500 dark:text-gray-400 hover:bg-gray-50 hover:text-gray-800 dark:hover:bg-gray-600 dark:hover:text-gray-200 ${className ?? ''}`}
       style={{ boxShadow: '0px 4px 6px -1px rgba(0, 0, 0, 0.1), 0px 2px 4px -2px rgba(0, 0, 0, 0.05)' }}
       onClick={onClick && onClick}
     >
@@ -57,7 +57,7 @@ export const EditIconSolid: FC<{ className?: string }> = ({ className }) => {
 
 const IconWrapper: FC<{ children: React.ReactNode | string }> = ({ children }) => {
   return (
-    <div className="rounded-lg h-6 w-6 flex items-center justify-center hover:bg-gray-100">
+    <div className="rounded-lg h-6 w-6 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-600">
       {children}
     </div>
   )
