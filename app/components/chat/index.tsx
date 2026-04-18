@@ -225,9 +225,8 @@ const Chat: FC<IChatProps> = ({
                 <div className={`${s.count} h-5 leading-5 text-sm bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-2 rounded`}>{query.trim().length}</div>
                 <VoiceInput
                   onResult={(text) => {
-                    const newQuery = query + text
-                    setQuery(newQuery)
-                    queryRef.current = newQuery
+                    setQuery(text)
+                    queryRef.current = text
                   }}
                   disabled={isResponding}
                 />
