@@ -19,6 +19,8 @@ import FileUploaderInAttachmentWrapper from '@/app/components/base/file-uploader
 import type { FileEntity, FileUpload } from '@/app/components/base/file-uploader-in-attachment/types'
 import { getProcessedFiles } from '@/app/components/base/file-uploader-in-attachment/utils'
 import { VoiceInput } from './voice-input'
+import { setAutoReadPending, triggerAutoReadIfPending } from './text-to-speech'
+import { VOICE_INPUT_CONFIG } from '@/config/voice-input'
 
 export interface IChatProps {
   chatList: ChatItem[]
@@ -58,6 +60,24 @@ const Chat: FC<IChatProps> = ({
   const { t } = useTranslation()
   const { notify } = Toast
   const isUseInputMethod = useRef(false)
+  const prevIsRespondingRef = useRef(false)
+  const hasReadAloudRef = useRef(false)
+
+  useEffect(() => {
+    if (VOICE_INPUT_CONFIG.AUTO_READ_ALOUD) {
+      if (prevIsRespondingRef.current && !isResponding) {
+        const lastItem = chatList[chatList.length - 1]
+        if (lastItem?.isAnswer && lastItem?.content && !hasReadAloudRef.current) {
+          triggerAutoReadIfPending(lastItem.content)
+          hasReadAloudRef.current = true
+        }
+      }
+      if (isResponding) {
+        hasReadAloudRef.current = false
+      }
+    }
+    prevIsRespondingRef.current = !!isResponding
+  }, [isResponding, chatList])
 
   const [query, setQuery] = React.useState('')
   const queryRef = useRef('')
@@ -101,6 +121,8 @@ const Chat: FC<IChatProps> = ({
 
   const handleSend = () => {
     if (!valid() || (checkCanSend && !checkCanSend())) { return }
+    hasReadAloudRef.current = true
+    setAutoReadPending(false)
     const imageFiles: VisionFile[] = files.filter(file => file.progress !== -1).map(fileItem => ({
       type: 'image',
       transfer_method: fileItem.type,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { SpeakerWaveIcon, SpeakerXMarkIcon } from '@heroicons/react/24/outline'
 
 interface TextToSpeechProps {
@@ -8,21 +8,36 @@ interface TextToSpeechProps {
   disabled?: boolean
 }
 
+let pendingAutoRead = false
+let autoReadCallback: ((text: string) => void) | null = null
+
+export function setAutoReadPending(val: boolean) {
+  pendingAutoRead = val
+}
+
+export function triggerAutoReadIfPending(text: string) {
+  if (autoReadCallback) {
+    pendingAutoRead = false
+    autoReadCallback(text)
+  }
+}
+
+export function stopReadAloud() {
+  if (window.speechSynthesis) {
+    window.speechSynthesis.cancel()
+  }
+}
+
 export function TextToSpeech({ text, disabled = false }: TextToSpeechProps) {
   const [isSpeaking, setIsSpeaking] = useState(false)
 
-  const toggle = () => {
-    if (disabled) { return }
+  const speak = useCallback((content: string) => {
+    if (!content.trim()) { return }
+    if (!window.speechSynthesis) { return }
 
-    if (isSpeaking) {
-      window.speechSynthesis.cancel()
-      setIsSpeaking(false)
-      return
-    }
+    window.speechSynthesis.cancel()
 
-    if (!text.trim()) { return }
-
-    const utterance = new SpeechSynthesisUtterance(text)
+    const utterance = new SpeechSynthesisUtterance(content)
     utterance.lang = 'zh-CN'
     utterance.rate = 1
     utterance.pitch = 1
@@ -35,9 +50,27 @@ export function TextToSpeech({ text, disabled = false }: TextToSpeechProps) {
       setIsSpeaking(false)
     }
 
-    window.speechSynthesis.cancel()
     window.speechSynthesis.speak(utterance)
     setIsSpeaking(true)
+  }, [])
+
+  useEffect(() => {
+    autoReadCallback = speak
+    return () => {
+      autoReadCallback = null
+    }
+  }, [speak])
+
+  const toggle = () => {
+    if (disabled) { return }
+
+    if (isSpeaking) {
+      window.speechSynthesis.cancel()
+      setIsSpeaking(false)
+      return
+    }
+
+    speak(text)
   }
 
   if (!window.speechSynthesis) {

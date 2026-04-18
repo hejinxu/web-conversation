@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { MicrophoneIcon, StopIcon } from '@heroicons/react/24/solid'
 import { VOICE_INPUT_CONFIG } from '@/config/voice-input'
+import { setAutoReadPending, stopReadAloud } from './text-to-speech'
 
 interface VoiceInputProps {
   onResult: (text: string) => void
@@ -55,6 +56,9 @@ export function VoiceInput({ onResult, onAutoSend, disabled = false }: VoiceInpu
     accumulatedRef.current = ''
     setIsListening(false)
     if (fromTimeout && VOICE_INPUT_CONFIG.AUTO_SEND_ON_TIMEOUT && finalText && onAutoSendRef.current) {
+      if (VOICE_INPUT_CONFIG.AUTO_READ_ALOUD) {
+        setAutoReadPending(true)
+      }
       onAutoSendRef.current()
     }
   }
@@ -65,6 +69,7 @@ export function VoiceInput({ onResult, onAutoSend, disabled = false }: VoiceInpu
 
     accumulatedRef.current = ''
     isActiveRef.current = true
+    stopReadAloud()
 
     const recognition = new SpeechRecognition()
     recognition.continuous = true
