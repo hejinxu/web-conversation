@@ -1,9 +1,10 @@
-export type ThemeMode = 'light' | 'dark' | 'system'
+export type ThemeMode = 'light' | 'dark' | 'system' | 'tech-blue'
 
 export const THEME_MODES: Record<string, ThemeMode> = {
   LIGHT: 'light',
   DARK: 'dark',
   SYSTEM: 'system',
+  TECH_BLUE: 'tech-blue',
 }
 
 export const THEME_STORAGE_KEY = 'theme-mode'

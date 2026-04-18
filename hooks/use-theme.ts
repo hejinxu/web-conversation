@@ -13,7 +13,7 @@ import {
 
 export interface UseThemeReturn {
   theme: ThemeMode
-  resolvedTheme: 'light' | 'dark'
+  resolvedTheme: 'light' | 'dark' | 'tech-blue'
   setTheme: (theme: ThemeMode) => void
   toggleTheme: () => void
 }
@@ -25,9 +25,28 @@ function getSystemTheme(): 'light' | 'dark' {
   return 'light'
 }
 
+function applyBodyStyles(resolvedTheme: 'light' | 'dark' | 'tech-blue') {
+  const body = document.body
+  if (!body) { return }
+
+  switch (resolvedTheme) {
+    case 'dark':
+      body.style.backgroundColor = '#111928'
+      body.style.color = '#F9FAFB'
+      break
+    case 'tech-blue':
+      body.style.backgroundColor = '#080F23'
+      body.style.color = '#E0F2FF'
+      break
+    default:
+      body.style.backgroundColor = '#FFFFFF'
+      body.style.color = '#111928'
+  }
+}
+
 export function useTheme(): UseThemeReturn {
   const [theme, setThemeState] = useState<ThemeMode>(DEFAULT_THEME)
-  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() => {
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark' | 'tech-blue'>(() => {
     if (typeof window !== 'undefined') {
       let initialTheme = DEFAULT_THEME
       const savedTheme = localStorage.getItem(THEME_STORAGE_KEY)
@@ -38,6 +57,9 @@ export function useTheme(): UseThemeReturn {
       if (initialTheme === THEME_MODES.SYSTEM) {
         return getSystemTheme()
       }
+      if (initialTheme === THEME_MODES.TECH_BLUE) {
+        return 'tech-blue'
+      }
       return initialTheme as 'light' | 'dark'
     }
     return DEFAULT_THEME === THEME_MODES.DARK ? 'dark' : 'light'
@@ -46,8 +68,6 @@ export function useTheme(): UseThemeReturn {
   useEffect(() => {
     const savedTheme = localStorage.getItem(THEME_STORAGE_KEY)
 
-    // 优先使用 localStorage 中保存的用户选择
-    // 如果没有保存，则使用 .env.local 中配置的默认主题
     if (savedTheme && isValidThemeMode(savedTheme)) {
       setThemeState(savedTheme)
     } else {
@@ -57,10 +77,12 @@ export function useTheme(): UseThemeReturn {
 
   useEffect(() => {
     const applyTheme = () => {
-      let newResolvedTheme: 'light' | 'dark'
+      let newResolvedTheme: 'light' | 'dark' | 'tech-blue'
 
       if (theme === THEME_MODES.SYSTEM) {
         newResolvedTheme = getSystemTheme()
+      } else if (theme === THEME_MODES.TECH_BLUE) {
+        newResolvedTheme = 'tech-blue'
       } else {
         newResolvedTheme = theme as 'light' | 'dark'
       }
@@ -68,8 +90,10 @@ export function useTheme(): UseThemeReturn {
       setResolvedTheme(newResolvedTheme)
 
       const root = window.document.documentElement
-      root.classList.remove('light', 'dark')
+      root.classList.remove('light', 'dark', 'tech-blue')
       root.classList.add(newResolvedTheme)
+
+      applyBodyStyles(newResolvedTheme)
     }
 
     applyTheme()
@@ -94,8 +118,10 @@ export function useTheme(): UseThemeReturn {
     const nextTheme = theme === THEME_MODES.LIGHT
       ? THEME_MODES.DARK
       : theme === THEME_MODES.DARK
-        ? THEME_MODES.SYSTEM
-        : THEME_MODES.LIGHT
+        ? THEME_MODES.TECH_BLUE
+        : theme === THEME_MODES.TECH_BLUE
+          ? THEME_MODES.SYSTEM
+          : THEME_MODES.LIGHT
     setTheme(nextTheme)
   }
 
