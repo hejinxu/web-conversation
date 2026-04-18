@@ -15,6 +15,7 @@ import ImageGallery from '../../base/image-gallery'
 import LoadingAnim from '../loading-anim'
 import s from '../style.module.css'
 import Thought from '../thought'
+import { TextToSpeech } from '../text-to-speech'
 
 function OperationBtn({ innerContent, onClick, className }: { innerContent: React.ReactNode, onClick?: () => void, className?: string }) {
   return (
@@ -153,6 +154,7 @@ const Answer: FC<IAnswerProps> = ({
             {OperationBtn({ innerContent: <IconWrapper><RegenerateIcon /></IconWrapper>, onClick: () => onRegenerate(id) })}
           </Tooltip>
         )}
+        <TextToSpeech text={content} disabled={isResponding} />
       </div>
     )
   }

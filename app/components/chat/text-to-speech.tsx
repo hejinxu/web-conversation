@@ -1,0 +1,63 @@
+'use client'
+
+import { useState } from 'react'
+import { SpeakerWaveIcon, SpeakerXMarkIcon } from '@heroicons/react/24/outline'
+
+interface TextToSpeechProps {
+  text: string
+  disabled?: boolean
+}
+
+export function TextToSpeech({ text, disabled = false }: TextToSpeechProps) {
+  const [isSpeaking, setIsSpeaking] = useState(false)
+
+  const toggle = () => {
+    if (disabled) { return }
+
+    if (isSpeaking) {
+      window.speechSynthesis.cancel()
+      setIsSpeaking(false)
+      return
+    }
+
+    if (!text.trim()) { return }
+
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = 'zh-CN'
+    utterance.rate = 1
+    utterance.pitch = 1
+
+    utterance.onend = () => {
+      setIsSpeaking(false)
+    }
+
+    utterance.onerror = () => {
+      setIsSpeaking(false)
+    }
+
+    window.speechSynthesis.cancel()
+    window.speechSynthesis.speak(utterance)
+    setIsSpeaking(true)
+  }
+
+  if (!window.speechSynthesis) {
+    return null
+  }
+
+  return (
+    <div
+      className={`relative box-border flex items-center justify-center h-7 w-7 p-0.5 rounded-lg bg-white dark:bg-gray-700 cursor-pointer text-gray-500 dark:text-gray-400 hover:bg-gray-50 hover:text-gray-800 dark:hover:bg-gray-600 dark:hover:text-gray-200 ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+      style={{ boxShadow: '0px 4px 6px -1px rgba(0, 0, 0, 0.1), 0px 2px 4px -2px rgba(0, 0, 0, 0.05)' }}
+      onClick={disabled ? undefined : toggle}
+      title={isSpeaking ? '停止朗读' : '语音朗读'}
+    >
+      {isSpeaking
+        ? (
+          <SpeakerXMarkIcon className="w-4 h-4 text-red-500" />
+        )
+        : (
+          <SpeakerWaveIcon className="w-4 h-4" />
+        )}
+    </div>
+  )
+}
