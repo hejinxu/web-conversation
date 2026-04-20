@@ -123,9 +123,8 @@ export const VoiceInput = forwardRef(({ onResult, onAutoSend, disabled = false, 
     }
 
     recognition.onerror = (event: any) => {
-      console.error('Speech recognition error:', event.error)
       if (!isActiveRef.current) { return }
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed' || event.error === 'network') {
         doStop()
       }
     }
