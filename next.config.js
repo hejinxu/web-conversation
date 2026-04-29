@@ -1,23 +1,36 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   devIndicators: false,
-  productionBrowserSourceMaps: false, // enable browser source map generation during the production build
-  // Configure pageExtensions to include md and mdx
+  productionBrowserSourceMaps: false,
   pageExtensions: ['ts', 'tsx', 'js', 'jsx', 'md', 'mdx'],
   experimental: {
     // appDir: true,
   },
-  // fix all before production. Now it slow the develop speed.
   eslint: {
-    // Warning: This allows production builds to successfully complete even if
-    // your project has ESLint errors.
     ignoreDuringBuilds: true,
   },
   typescript: {
-    // https://nextjs.org/docs/api-reference/next.config.js/ignoring-typescript-errors
     ignoreBuildErrors: true,
   },
   output: 'standalone',
+  transpilePackages: ['langium', 'vscode-languageserver-types', 'vscode-languageserver', 'vscode-uri', '@mermaid-js/parser'],
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        path: false,
+        crypto: false,
+      }
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        'vscode-languageserver-types': false,
+        'vscode-languageserver': false,
+        'vscode-uri': false,
+      }
+    }
+    return config
+  },
 }
 
 module.exports = nextConfig

@@ -10,7 +10,9 @@
     "fix": "eslint . --fix",
     "eslint-fix": "eslint . --fix",
     "lint-staged": "lint-staged",
-    "prepare": "husky"
+    "prepare": "husky",
+    "download-whisper": "node scripts/download-whisper-model.js",
+    "speech-server": "cd speech-server && pnpm start"
   },
   "dependencies": {
     "@floating-ui/react": "^0.26.25",

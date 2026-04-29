@@ -3,200 +3,328 @@
 import { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react'
 import { MicrophoneIcon, StopIcon } from '@heroicons/react/24/solid'
 import { VOICE_INPUT_CONFIG } from '@/config/voice-input'
+import type { VoiceRecognitionEngine } from '@/config/voice-input'
 import { setAutoReadPending, stopReadAloud } from './text-to-speech'
+import { BrowserRecognition } from './voice-recognition/browser-recognition'
+import { WhisperRecognition } from './voice-recognition/whisper-recognition'
+import type { WhisperModel } from './voice-recognition/whisper-recognition'
+import type { VoiceRecognitionResult } from './voice-recognition/types'
 
 interface VoiceInputProps {
   onResult: (text: string) => void
   onAutoSend?: () => void
   disabled?: boolean
-  autoStopOnTimeout?: boolean
-  timeoutMs?: number
-  autoSendOnTimeout?: boolean
+  autoStopOnNoInput?: boolean
+  noInputMs?: number
+  autoSendOnStop?: boolean
   autoReadAloud?: boolean
+  engine?: VoiceRecognitionEngine
+  whisperModel?: WhisperModel
 }
 
-export const VoiceInput = forwardRef(({ onResult, onAutoSend, disabled = false, autoStopOnTimeout = true, timeoutMs = VOICE_INPUT_CONFIG.TIMEOUT_MS, autoSendOnTimeout = VOICE_INPUT_CONFIG.AUTO_SEND_ON_TIMEOUT, autoReadAloud = VOICE_INPUT_CONFIG.AUTO_READ_ALOUD }: VoiceInputProps, ref: React.Ref<{ stop: () => void }>) => {
+export const VoiceInput = forwardRef(({ onResult, onAutoSend, disabled = false, autoStopOnNoInput = true, noInputMs = VOICE_INPUT_CONFIG.NO_INPUT_TIMEOUT_MS_BROWSER, autoSendOnStop = VOICE_INPUT_CONFIG.AUTO_SEND_ON_STOP, autoReadAloud = VOICE_INPUT_CONFIG.AUTO_READ_ALOUD, engine = VOICE_INPUT_CONFIG.DEFAULT_ENGINE, whisperModel = 'whisper-tiny' }: VoiceInputProps, ref: React.Ref<{ stop: () => void }>) => {
   const [isListening, setIsListening] = useState(false)
   const [isSupported, setIsSupported] = useState(false)
-  const recognitionRef = useRef<any>(null)
-  const accumulatedRef = useRef('')
+  const [isWaitingForResult, setIsWaitingForResult] = useState(false)
+  const [countdown, setCountdown] = useState(0)
+  const engineRef = useRef<any>(null)
   const isActiveRef = useRef(false)
-  const timerRef = useRef<any>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const speechTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const accumulatedRef = useRef('')
+  const interimRef = useRef('')
+  const pendingSendRef = useRef(false)
+  const sendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const countdownEndRef = useRef(0)
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const onResultRef = useRef(onResult)
   const onAutoSendRef = useRef(onAutoSend)
-  const autoStopOnTimeoutRef = useRef(autoStopOnTimeout)
-  const timeoutMsRef = useRef(timeoutMs)
-  const autoSendOnTimeoutRef = useRef(autoSendOnTimeout)
+  const autoStopOnNoInputRef = useRef(autoStopOnNoInput)
+  const noInputMsRef = useRef(noInputMs)
+  const autoSendOnStopRef = useRef(autoSendOnStop)
   const autoReadAloudRef = useRef(autoReadAloud)
+  const engineTypeRef = useRef(engine)
+  const whisperModelRef = useRef(whisperModel)
+
+  useEffect(() => { onResultRef.current = onResult }, [onResult])
+  useEffect(() => { onAutoSendRef.current = onAutoSend }, [onAutoSend])
+  useEffect(() => { autoStopOnNoInputRef.current = autoStopOnNoInput }, [autoStopOnNoInput])
+  useEffect(() => { noInputMsRef.current = noInputMs }, [noInputMs])
+  useEffect(() => { autoSendOnStopRef.current = autoSendOnStop }, [autoSendOnStop])
+  useEffect(() => { autoReadAloudRef.current = autoReadAloud }, [autoReadAloud])
+  useEffect(() => { whisperModelRef.current = whisperModel }, [whisperModel])
 
   useEffect(() => {
-    onResultRef.current = onResult
-  }, [onResult])
+    engineTypeRef.current = engine
+    if (isActiveRef.current) {
+      isActiveRef.current = false
+      clearTimer()
+      if (engineRef.current) {
+        try { engineRef.current.stop() } catch (e) { /* ignore */ }
+        engineRef.current = null
+      }
+      setIsListening(false)
+    }
+  }, [engine])
 
-  useEffect(() => {
-    onAutoSendRef.current = onAutoSend
-  }, [onAutoSend])
+  const createEngine = (callback: (result: VoiceRecognitionResult) => void) => {
+    if (engineTypeRef.current === 'whisper') {
+      return new WhisperRecognition(callback, whisperModelRef.current)
+    }
+    return new BrowserRecognition(callback)
+  }
 
-  useEffect(() => {
-    autoStopOnTimeoutRef.current = autoStopOnTimeout
-  }, [autoStopOnTimeout])
-
-  useEffect(() => {
-    timeoutMsRef.current = timeoutMs
-  }, [timeoutMs])
-
-  useEffect(() => {
-    autoSendOnTimeoutRef.current = autoSendOnTimeout
-  }, [autoSendOnTimeout])
-
-  useEffect(() => {
-    autoReadAloudRef.current = autoReadAloud
-  }, [autoReadAloud])
+  const checkSupport = () => {
+    if (typeof window === 'undefined') { return false }
+    if (engineTypeRef.current === 'whisper') {
+      return !!navigator.mediaDevices?.getUserMedia
+    }
+    return !!(window.SpeechRecognition || (window as any).webkitSpeechRecognition)
+  }
 
   const clearTimer = () => {
     if (timerRef.current) {
       globalThis.clearTimeout(timerRef.current)
       timerRef.current = null
     }
+    if (speechTimerRef.current) {
+      globalThis.clearTimeout(speechTimerRef.current)
+      speechTimerRef.current = null
+    }
   }
 
-  const startTimer = () => {
-    clearTimer()
-    if (!autoStopOnTimeoutRef.current) { return }
-    timerRef.current = globalThis.setTimeout(() => {
-      doStop(true)
-    }, timeoutMsRef.current)
+  const clearSendTimer = () => {
+    if (sendTimerRef.current) {
+      globalThis.clearTimeout(sendTimerRef.current)
+      sendTimerRef.current = null
+    }
+  }
+
+  const clearCountdown = () => {
+    if (countdownIntervalRef.current) {
+      globalThis.clearInterval(countdownIntervalRef.current)
+      countdownIntervalRef.current = null
+    }
+    countdownEndRef.current = 0
+    setCountdown(0)
+  }
+
+  const startCountdown = (delayMs: number) => {
+    clearCountdown()
+    countdownEndRef.current = Date.now() + delayMs
+    setCountdown(Math.ceil(delayMs / 100) / 10)
+    countdownIntervalRef.current = globalThis.setInterval(() => {
+      const remaining = countdownEndRef.current - Date.now()
+      if (remaining <= 0) {
+        if (countdownIntervalRef.current) {
+          globalThis.clearInterval(countdownIntervalRef.current)
+          countdownIntervalRef.current = null
+        }
+        setCountdown(0)
+        return
+      }
+      setCountdown(Math.ceil(remaining / 100) / 10)
+    }, 100)
   }
 
   const doStop = (fromTimeout = false) => {
     if (!isActiveRef.current) { return }
     isActiveRef.current = false
     clearTimer()
-    try { recognitionRef.current?.stop() } catch (e) { /* ignore */ }
-    recognitionRef.current = null
-    const finalText = accumulatedRef.current.trim()
-    if (finalText) {
-      onResultRef.current(finalText)
-    }
-    accumulatedRef.current = ''
+    clearSendTimer()
+    clearCountdown()
+    pendingSendRef.current = false
+    setIsWaitingForResult(false)
+    try { engineRef.current?.stop() } catch (e) { /* ignore */ }
+    engineRef.current = null
     setIsListening(false)
-    if (fromTimeout && autoSendOnTimeoutRef.current && finalText && onAutoSendRef.current) {
-      if (autoReadAloudRef.current) {
-        setAutoReadPending(true)
-      }
-      onAutoSendRef.current()
-    }
   }
 
   const doStart = () => {
-    const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SpeechRecognition) { return }
+    if (!checkSupport()) { return }
 
-    accumulatedRef.current = ''
-    isActiveRef.current = true
     stopReadAloud()
+    accumulatedRef.current = ''
+    interimRef.current = ''
+    pendingSendRef.current = false
+    clearSendTimer()
+    clearCountdown()
+    setIsWaitingForResult(false)
+    isActiveRef.current = true
 
-    const recognition = new SpeechRecognition()
-    recognition.continuous = true
-    recognition.interimResults = true
-    recognition.lang = 'zh-CN'
-
-    recognition.onresult = (event: any) => {
+    const voiceEngine = createEngine((result: VoiceRecognitionResult) => {
       if (!isActiveRef.current) { return }
 
-      let finalText = ''
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          finalText += event.results[i][0].transcript
+      if (autoStopOnNoInputRef.current) {
+        if (speechTimerRef.current) {
+          globalThis.clearTimeout(speechTimerRef.current)
         }
+        speechTimerRef.current = globalThis.setTimeout(() => {
+          if (!isActiveRef.current) { return }
+
+          isActiveRef.current = false
+          clearTimer()
+          try { engineRef.current?.stop() } catch (e) { /* ignore */ }
+          engineRef.current = null
+          setIsListening(false)
+
+          if (autoSendOnStopRef.current && onAutoSendRef.current) {
+            pendingSendRef.current = true
+            setIsWaitingForResult(true)
+            startCountdown(noInputMsRef.current)
+            sendTimerRef.current = globalThis.setTimeout(() => {
+              if (!pendingSendRef.current) { return }
+              pendingSendRef.current = false
+              clearCountdown()
+              setIsWaitingForResult(false)
+              const finalText = accumulatedRef.current.trim()
+              if (finalText) {
+                onResultRef.current(finalText)
+                if (autoReadAloudRef.current) { setAutoReadPending(true) }
+                onAutoSendRef.current!()
+              }
+            }, noInputMsRef.current)
+          }
+        }, noInputMsRef.current)
       }
 
-      if (finalText) {
-        if (accumulatedRef.current) {
-          accumulatedRef.current = (`${accumulatedRef.current}，${finalText}`).trim()
-        } else {
-          accumulatedRef.current = finalText.trim()
+      if (result.isFinal && result.text) {
+        const text = result.text.trim()
+        if (!text) { return }
+
+        if (engineTypeRef.current === 'whisper') {
+          accumulatedRef.current = text
         }
+        else {
+          if (accumulatedRef.current) {
+            accumulatedRef.current = `${accumulatedRef.current}，${text}`
+          }
+          else {
+            accumulatedRef.current = text
+          }
+        }
+        interimRef.current = ''
         onResultRef.current(accumulatedRef.current)
-        startTimer()
-      }
-    }
 
-    recognition.onerror = (event: any) => {
-      if (!isActiveRef.current) { return }
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed' || event.error === 'network') {
-        doStop()
-      }
-    }
-
-    recognition.onend = () => {
-      if (isActiveRef.current) {
-        try {
-          recognition.start()
-        } catch (e) {
-          doStop()
+        if (pendingSendRef.current) {
+          clearSendTimer()
+          startCountdown(noInputMsRef.current)
+          sendTimerRef.current = globalThis.setTimeout(() => {
+            if (!pendingSendRef.current) { return }
+            pendingSendRef.current = false
+            clearCountdown()
+            setIsWaitingForResult(false)
+            const finalText = accumulatedRef.current.trim()
+            if (finalText) {
+              onResultRef.current(finalText)
+              if (autoReadAloudRef.current) { setAutoReadPending(true) }
+              onAutoSendRef.current!()
+            }
+          }, noInputMsRef.current)
         }
       }
-    }
+      else if (!result.isFinal && result.text) {
+        const interim = result.text.trim()
+        if (!interim) { return }
 
-    recognitionRef.current = recognition
+        interimRef.current = interim
+        const preview = accumulatedRef.current
+          ? `${accumulatedRef.current}，${interim}`
+          : interim
+        onResultRef.current(preview)
+      }
+    })
 
-    try {
-      recognition.start()
-      setIsListening(true)
-    } catch (error) {
-      console.error('Failed to start speech recognition:', error)
-      isActiveRef.current = false
+    voiceEngine.start()
+    engineRef.current = voiceEngine
+    setIsListening(true)
+
+    clearTimer()
+    if (autoStopOnNoInputRef.current) {
+      speechTimerRef.current = globalThis.setTimeout(() => {
+        if (!isActiveRef.current) { return }
+
+        isActiveRef.current = false
+        clearTimer()
+        try { engineRef.current?.stop() } catch (e) { /* ignore */ }
+        engineRef.current = null
+        setIsListening(false)
+
+        if (autoSendOnStopRef.current && onAutoSendRef.current) {
+          pendingSendRef.current = true
+          setIsWaitingForResult(true)
+          startCountdown(noInputMsRef.current)
+          sendTimerRef.current = globalThis.setTimeout(() => {
+            if (!pendingSendRef.current) { return }
+            pendingSendRef.current = false
+            clearCountdown()
+            setIsWaitingForResult(false)
+            const finalText = accumulatedRef.current.trim()
+            if (finalText) {
+              onResultRef.current(finalText)
+              if (autoReadAloudRef.current) { setAutoReadPending(true) }
+              onAutoSendRef.current!()
+            }
+          }, noInputMsRef.current)
+        }
+      }, noInputMsRef.current)
     }
   }
 
   useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition
-    setIsSupported(!!SpeechRecognition)
-
+    setIsSupported(checkSupport())
     return () => {
       isActiveRef.current = false
       clearTimer()
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop() } catch (e) { /* ignore */ }
+      clearSendTimer()
+      clearCountdown()
+      if (engineRef.current) {
+        try { engineRef.current.stop() } catch (e) { /* ignore */ }
       }
     }
   }, [])
 
+  useEffect(() => {
+    setIsSupported(checkSupport())
+  }, [engine])
+
   const toggleListening = () => {
     if (isListening) {
-      doStop()
+      doStop(false)
     } else if (!disabled) {
       doStart()
     }
   }
 
   useImperativeHandle(ref, () => ({
-    stop: doStop,
+    stop: () => doStop(false),
   }), [])
 
-  if (!isSupported) {
-    return null
-  }
+  if (!isSupported) { return null }
 
   return (
-    <button
-      type="button"
-      onClick={toggleListening}
-      className={`flex items-center justify-center w-8 h-8 rounded-md transition-colors cursor-pointer ${
-        isListening
-          ? 'text-red-500 voice-input-listening'
-          : (disabled ? 'text-gray-300 dark:text-gray-600' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200')
-      }`}
-      title={isListening ? '点击停止录音' : '点击开始语音输入'}
-    >
-      {isListening
-        ? (
-          <StopIcon className="w-4 h-4" />
-        )
-        : (
-          <MicrophoneIcon className="w-4 h-4" />
-        )}
-    </button>
+    <div className="flex items-center gap-1.5">
+      <div className="relative" title={isListening ? '点击停止录音' : '点击开始语音输入'}>
+        <button
+          type="button"
+          onClick={toggleListening}
+          className={`flex items-center justify-center w-8 h-8 rounded-md transition-colors cursor-pointer ${
+            isListening
+              ? 'text-red-500 voice-input-listening'
+              : (disabled ? 'text-gray-300 dark:text-gray-600' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200')
+          }`}
+        >
+          {isListening
+            ? <StopIcon className="w-4 h-4" />
+            : <MicrophoneIcon className="w-4 h-4" />
+          }
+        </button>
+      </div>
+      {isWaitingForResult && (
+        <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap animate-pulse">
+          等待结果 {countdown.toFixed(1)}s
+        </span>
+      )}
+    </div>
   )
 })
